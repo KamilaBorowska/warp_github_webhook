@@ -1,6 +1,6 @@
 [package]
 name = "warp_github_webhook"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Konrad Borowski <konrad@borowski.pw>"]
 description = "GitHub webhook for Warp web framework"
 license = "MIT/Apache-2.0"
