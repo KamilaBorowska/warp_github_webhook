@@ -3,6 +3,7 @@
 use hmac::{Hmac, Mac};
 use serde::de::DeserializeOwned;
 use sha1::Sha1;
+use std::fmt::Debug;
 use warp::body::FullBody;
 use warp::{Buf, Filter, Rejection};
 
@@ -76,7 +77,7 @@ pub const WATCH: Kind = Kind("watch");
 pub fn webhook<T>(
     Kind(kind): Kind,
     secret: impl AsRef<str> + Clone + Send + Sync + 'static,
-) -> impl Clone + Filter<Extract = (T,), Error = Rejection>
+) -> impl Clone + Debug + Filter<Extract = (T,), Error = Rejection>
 where
     T: 'static + DeserializeOwned + Send,
 {
