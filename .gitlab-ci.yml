@@ -1,0 +1,32 @@
+test:1.28:
+  script: &test_script
+  - &print_version rustc --version && cargo --version
+  - cargo test --no-default-features --verbose
+  - cargo test --all-features --verbose
+  image: rust:1.28
+
+test:stable:
+  script: *test_script
+  image: rust:latest
+
+test:beta:
+  script: *test_script
+  image: liuchong/rustup:beta
+
+test:nightly:
+  script: *test_script
+  image: rustlang/rust:nightly
+
+clippy:
+  script:
+  - *print_version
+  - rustup component add clippy-preview
+  - cargo clippy --verbose
+  image: rustlang/rust:nightly
+
+rustfmt:
+  script:
+  - *print_version
+  - rustup component add rustfmt-preview
+  - cargo fmt -- --check
+  image: rustlang/rust:nightly
