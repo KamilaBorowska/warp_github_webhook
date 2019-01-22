@@ -11,45 +11,47 @@ use warp::{Buf, Filter, Rejection};
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Kind(&'static str);
 
-pub const CHECK_RUN: Kind = Kind("check_run");
-pub const CHECK_SUITE: Kind = Kind("check_suite");
-pub const COMMIT_COMMENT: Kind = Kind("commit_comment");
-pub const CREATE: Kind = Kind("create");
-pub const DELETE: Kind = Kind("delete");
-pub const DEPLOYMENT: Kind = Kind("deployment");
-pub const DEPLOYMENT_STATUS: Kind = Kind("deployment_status");
-pub const FORK: Kind = Kind("fork");
-pub const GITHUB_APP_AUTHORIZATION: Kind = Kind("github_app_authorization");
-pub const GOLLUM: Kind = Kind("gollum");
-pub const INSTALLATION: Kind = Kind("installation");
-pub const INSTALLATION_REPOSITORIES: Kind = Kind("installation_repositories");
-pub const ISSUE_COMMENT: Kind = Kind("issue_comment");
-pub const ISSUES: Kind = Kind("issues");
-pub const LABEL: Kind = Kind("label");
-pub const MARKETPLACE_PURCHASE: Kind = Kind("marketplace_purchase");
-pub const MEMBER: Kind = Kind("member");
-pub const MEMBERSHIP: Kind = Kind("membership");
-pub const MILESTONE: Kind = Kind("milestone");
-pub const ORGANIZATION: Kind = Kind("organization");
-pub const ORG_BLOCK: Kind = Kind("org_block");
-pub const PAGE_BUILD: Kind = Kind("page_build");
-pub const PROJECT_CARD: Kind = Kind("project_card");
-pub const PROJECT_COLUMN: Kind = Kind("project_column");
-pub const PROJECT: Kind = Kind("project");
-pub const PUBLIC: Kind = Kind("public");
-pub const PULL_REQUEST_REVIEW_COMMENT: Kind = Kind("pull_request_review_comment");
-pub const PULL_REQUEST_REVIEW: Kind = Kind("pull_request_review");
-pub const PULL_REQUEST: Kind = Kind("pull_request");
-pub const PUSH: Kind = Kind("push");
-pub const REPOSITORY: Kind = Kind("repository");
-pub const REPOSITORY_IMPORT: Kind = Kind("repository_import");
-pub const REPOSITORY_VULNERABILITY_ALERT: Kind = Kind("repository_vulnerability_alert");
-pub const RELEASE: Kind = Kind("release");
-pub const SECURITY_ADVISORY: Kind = Kind("security_advisory");
-pub const STATUS: Kind = Kind("status");
-pub const TEAM: Kind = Kind("team");
-pub const TEAM_ADD: Kind = Kind("team_add");
-pub const WATCH: Kind = Kind("watch");
+impl Kind {
+    pub const CHECK_RUN: Kind = Kind("check_run");
+    pub const CHECK_SUITE: Kind = Kind("check_suite");
+    pub const COMMIT_COMMENT: Kind = Kind("commit_comment");
+    pub const CREATE: Kind = Kind("create");
+    pub const DELETE: Kind = Kind("delete");
+    pub const DEPLOYMENT: Kind = Kind("deployment");
+    pub const DEPLOYMENT_STATUS: Kind = Kind("deployment_status");
+    pub const FORK: Kind = Kind("fork");
+    pub const GITHUB_APP_AUTHORIZATION: Kind = Kind("github_app_authorization");
+    pub const GOLLUM: Kind = Kind("gollum");
+    pub const INSTALLATION: Kind = Kind("installation");
+    pub const INSTALLATION_REPOSITORIES: Kind = Kind("installation_repositories");
+    pub const ISSUE_COMMENT: Kind = Kind("issue_comment");
+    pub const ISSUES: Kind = Kind("issues");
+    pub const LABEL: Kind = Kind("label");
+    pub const MARKETPLACE_PURCHASE: Kind = Kind("marketplace_purchase");
+    pub const MEMBER: Kind = Kind("member");
+    pub const MEMBERSHIP: Kind = Kind("membership");
+    pub const MILESTONE: Kind = Kind("milestone");
+    pub const ORGANIZATION: Kind = Kind("organization");
+    pub const ORG_BLOCK: Kind = Kind("org_block");
+    pub const PAGE_BUILD: Kind = Kind("page_build");
+    pub const PROJECT_CARD: Kind = Kind("project_card");
+    pub const PROJECT_COLUMN: Kind = Kind("project_column");
+    pub const PROJECT: Kind = Kind("project");
+    pub const PUBLIC: Kind = Kind("public");
+    pub const PULL_REQUEST_REVIEW_COMMENT: Kind = Kind("pull_request_review_comment");
+    pub const PULL_REQUEST_REVIEW: Kind = Kind("pull_request_review");
+    pub const PULL_REQUEST: Kind = Kind("pull_request");
+    pub const PUSH: Kind = Kind("push");
+    pub const REPOSITORY: Kind = Kind("repository");
+    pub const REPOSITORY_IMPORT: Kind = Kind("repository_import");
+    pub const REPOSITORY_VULNERABILITY_ALERT: Kind = Kind("repository_vulnerability_alert");
+    pub const RELEASE: Kind = Kind("release");
+    pub const SECURITY_ADVISORY: Kind = Kind("security_advisory");
+    pub const STATUS: Kind = Kind("status");
+    pub const TEAM: Kind = Kind("team");
+    pub const TEAM_ADD: Kind = Kind("team_add");
+    pub const WATCH: Kind = Kind("watch");
+}
 
 /// Creates a GitHub webhook responder.
 ///
@@ -63,7 +65,7 @@ pub const WATCH: Kind = Kind("watch");
 /// ```
 /// use serde_derive::Deserialize;
 /// use warp::{path, Filter};
-/// use warp_github_webhook::{webhook, PUSH};
+/// use warp_github_webhook::{webhook, Kind};
 ///
 /// #[derive(Deserialize)]
 /// struct PushEvent {
@@ -71,7 +73,7 @@ pub const WATCH: Kind = Kind("watch");
 /// }
 ///
 /// let route = path!("github")
-///     .and(webhook(PUSH, ""))
+///     .and(webhook(Kind::PUSH, ""))
 ///     .map(|PushEvent { compare }| compare);
 /// ```
 pub fn webhook<T>(
@@ -112,7 +114,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::{webhook, PUSH};
+    use super::{webhook, Kind};
     use serde_derive::Deserialize;
     use warp::Filter;
 
@@ -123,7 +125,7 @@ mod test {
             compare: String,
         }
 
-        let route = webhook(PUSH, "").map(|PushEvent { compare }| compare);
+        let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
             &**warp::test::request()
@@ -143,7 +145,7 @@ mod test {
             compare: String,
         }
 
-        let route = webhook(PUSH, "secret").map(|PushEvent { compare }| compare);
+        let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
         assert_eq!(
             &**warp::test::request()
@@ -167,7 +169,7 @@ mod test {
             compare: String,
         }
 
-        let route = webhook(PUSH, "secret").map(|PushEvent { compare }| compare);
+        let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
         assert_eq!(
             &**warp::test::request()
@@ -191,7 +193,7 @@ mod test {
             compare: String,
         }
 
-        let route = webhook(PUSH, "").map(|PushEvent { compare }| compare);
+        let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
             &**warp::test::request()
@@ -211,7 +213,7 @@ mod test {
             compare: String,
         }
 
-        let route = webhook(PUSH, "").map(|PushEvent { compare }| compare);
+        let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
             &**warp::test::request()
@@ -230,7 +232,7 @@ mod test {
             compare: String,
         }
 
-        let route = webhook(PUSH, "").map(|PushEvent { compare }| compare);
+        let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
             &**warp::test::request()
