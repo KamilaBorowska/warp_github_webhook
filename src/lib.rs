@@ -97,12 +97,11 @@ where
                 if !signature.starts_with(start) {
                     return Err(warp::reject::custom("Unexpected algorithm"));
                 }
-                let signature = hex::decode(&signature[start.len()..])
-                    .map_err(|_| warp::reject::custom("Undecodable hex string"))?;
+                let signature =
+                    hex::decode(&signature[start.len()..]).map_err(warp::reject::custom)?;
                 let json: Vec<u8> = body.collect();
                 if validate(secret.as_ref().as_bytes(), &signature, &json) {
-                    serde_json::from_slice(&json)
-                        .map_err(|_| warp::reject::custom("Undeserializable JSON"))
+                    serde_json::from_slice(&json).map_err(warp::reject::custom)
                 } else {
                     Err(warp::reject::custom("Invalid HMAC signature"))
                 }
@@ -216,6 +215,25 @@ mod test {
                 .reply(&route)
                 .body(),
             &b"Request body deserialize error: missing field `compare` at line 1 column 10"[..],
+        );
+    }
+
+    #[test]
+    fn invalid_signed_json() {
+        let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
+
+        assert_eq!(
+            &**warp::test::request()
+                .method("POST")
+                .header("X-GitHub-Event", "push")
+                .header(
+                    "X-Hub-Signature",
+                    "sha1=6a8e0e5f7da97721bd89c8276e2f3f6569fdea71",
+                )
+                .body(r#"{"x": "f"}"#)
+                .reply(&route)
+                .body(),
+            &b"Unhandled rejection: missing field `compare` at line 1 column 10"[..],
         );
     }
 }
