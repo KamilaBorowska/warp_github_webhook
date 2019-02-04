@@ -1,8 +1,7 @@
 //! GitHub webhook handler for [`warp`] web framework.
 
-use hmac::{Hmac, Mac};
+use github_webhook_message_validator::validate;
 use serde::de::DeserializeOwned;
-use sha1::Sha1;
 use std::fmt::Debug;
 use warp::body::FullBody;
 use warp::{Buf, Filter, Rejection};
@@ -101,12 +100,12 @@ where
                 let signature = hex::decode(&signature[start.len()..])
                     .map_err(|_| warp::reject::custom("Undecodable hex string"))?;
                 let json: Vec<u8> = body.collect();
-                let mut mac = Hmac::<Sha1>::new_varkey(secret.as_ref().as_bytes()).unwrap();
-                mac.input(&json);
-                mac.verify(&signature)
-                    .map_err(|_| warp::reject::custom("Invalid HMAC signature"))?;
-                serde_json::from_slice(&json)
-                    .map_err(|_| warp::reject::custom("Undeserializable JSON"))
+                if validate(secret.as_ref().as_bytes(), &signature, &json) {
+                    serde_json::from_slice(&json)
+                        .map_err(|_| warp::reject::custom("Undeserializable JSON"))
+                } else {
+                    Err(warp::reject::custom("Invalid HMAC signature"))
+                }
             })
             .boxed()
     }

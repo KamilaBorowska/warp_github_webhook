@@ -8,11 +8,10 @@ repository = "https://gitlab.com/KonradBorowski/warp_github_webhook"
 edition = "2018"
 
 [dependencies]
+github_webhook_message_validator = "0.1.2"
 hex = "0.3.2"
-hmac = "0.7.0"
 serde = "1.0.85"
 serde_json = "1.0.36"
-sha-1 = "0.8.1"
 warp = "0.1.11"
 
 [dev-dependencies]
