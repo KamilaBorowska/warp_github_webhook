@@ -117,13 +117,13 @@ mod test {
     use serde_derive::Deserialize;
     use warp::Filter;
 
+    #[derive(Deserialize)]
+    struct PushEvent {
+        compare: String,
+    }
+
     #[test]
     fn without_secret() {
-        #[derive(Deserialize)]
-        struct PushEvent {
-            compare: String,
-        }
-
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
@@ -139,11 +139,6 @@ mod test {
 
     #[test]
     fn with_secret() {
-        #[derive(Deserialize)]
-        struct PushEvent {
-            compare: String,
-        }
-
         let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
         assert_eq!(
@@ -163,11 +158,6 @@ mod test {
 
     #[test]
     fn with_wrong_secret() {
-        #[derive(Deserialize)]
-        struct PushEvent {
-            compare: String,
-        }
-
         let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
         assert_eq!(
@@ -187,11 +177,6 @@ mod test {
 
     #[test]
     fn wrong_event() {
-        #[derive(Deserialize)]
-        struct PushEvent {
-            compare: String,
-        }
-
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
@@ -207,11 +192,6 @@ mod test {
 
     #[test]
     fn missing_header() {
-        #[derive(Deserialize)]
-        struct PushEvent {
-            compare: String,
-        }
-
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
@@ -226,11 +206,6 @@ mod test {
 
     #[test]
     fn invalid_json() {
-        #[derive(Deserialize)]
-        struct PushEvent {
-            compare: String,
-        }
-
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
