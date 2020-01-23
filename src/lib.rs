@@ -3,8 +3,28 @@
 use github_webhook_message_validator::validate;
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
-use warp::body::FullBody;
-use warp::{Buf, Filter, Rejection};
+use warp::{reject, Filter, Rejection};
+
+pub mod rejections {
+    use warp::reject::Reject;
+    #[derive(Debug, Clone)]
+    pub struct UnexpectedAlgorithm;
+    impl Reject for UnexpectedAlgorithm {}
+
+    #[derive(Debug, Clone)]
+    pub struct InvalidSignature;
+    impl Reject for InvalidSignature {}
+
+    #[derive(Debug, Clone)]
+    pub struct Decoding(pub String);
+    impl Reject for Decoding {}
+
+    #[derive(Debug, Clone)]
+    pub struct Deserialization(pub String);
+    impl Reject for Deserialization {}
+}
+
+use rejections::*;
 
 /// Webhook kind.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -83,29 +103,31 @@ where
     T: 'static + DeserializeOwned + Send,
 {
     if secret.as_ref().is_empty() {
-        warp::post2()
+        warp::post()
             .and(warp::header::exact("X-GitHub-Event", kind))
             .and(warp::body::json())
             .boxed()
     } else {
-        warp::post2()
+        warp::post()
             .and(warp::header("X-Hub-Signature"))
             .and(warp::header::exact("X-GitHub-Event", kind))
-            .and(warp::body::concat())
-            .and_then(move |signature: String, body: FullBody| {
+            .and(warp::body::bytes())
+            .map(move |signature: String, body: bytes::Bytes| {
                 let start = "sha1=";
                 if !signature.starts_with(start) {
-                    return Err(warp::reject::custom("Unexpected algorithm"));
+                    return Err(reject::custom(UnexpectedAlgorithm)); //"Unexpected algorithm"
                 }
-                let signature =
-                    hex::decode(&signature[start.len()..]).map_err(warp::reject::custom)?;
-                let json: Vec<u8> = body.collect();
+                let signature = hex::decode(&signature[start.len()..])
+                    .map_err(|e| reject::custom(Decoding(e.to_string())))?;
+                let json: Vec<u8> = (*body).to_vec();
                 if validate(secret.as_ref().as_bytes(), &signature, &json) {
-                    serde_json::from_slice(&json).map_err(warp::reject::custom)
+                    serde_json::from_slice(&json)
+                        .map_err(|e| reject::custom(Deserialization(e.to_string())))
                 } else {
-                    Err(warp::reject::custom("Invalid HMAC signature"))
+                    Err(reject::custom(InvalidSignature)) // "Invalid HMAC signature"
                 }
             })
+            .and_then(|result| async { result })
             .boxed()
     }
 }
@@ -121,61 +143,60 @@ mod test {
         compare: String,
     }
 
-    #[test]
-    fn without_secret() {
+    #[tokio::test]
+    async fn without_secret() {
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
+        let response = warp::test::request()
+            .method("POST")
+            .header("X-GitHub-Event", "push")
+            .body(r#"{"compare": "f"}"#)
+            .reply(&route)
+            .await;
 
-        assert_eq!(
-            &**warp::test::request()
-                .method("POST")
-                .header("X-GitHub-Event", "push")
-                .body(r#"{"compare": "f"}"#)
-                .reply(&route)
-                .body(),
-            b"f",
-        )
+        assert_eq!(response.body(), &b"f"[..],)
     }
 
-    #[test]
-    fn with_secret() {
+    #[tokio::test]
+    async fn with_secret() {
         let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
-        assert_eq!(
-            &**warp::test::request()
-                .method("POST")
-                .header("X-GitHub-Event", "push")
-                .header(
-                    "X-Hub-Signature",
-                    "sha1=7c7bc65ac1fce0a1c87fe0229a2bd229a4130bb6"
-                )
-                .body(r#"{"compare": "f"}"#)
-                .reply(&route)
-                .body(),
-            b"f",
-        )
+        let response = warp::test::request()
+            .method("POST")
+            .header("X-GitHub-Event", "push")
+            .header(
+                "X-Hub-Signature",
+                "sha1=7c7bc65ac1fce0a1c87fe0229a2bd229a4130bb6",
+            )
+            .body(r#"{"compare": "f"}"#)
+            .reply(&route)
+            .await;
+
+        assert_eq!(response.body(), &b"f"[..],)
     }
 
-    #[test]
-    fn with_wrong_secret() {
+    #[tokio::test]
+    async fn with_wrong_secret() {
         let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
+        let response = warp::test::request()
+            .method("POST")
+            .header("X-GitHub-Event", "push")
+            .header(
+                "X-Hub-Signature",
+                "sha1=7c7bc65ac1fce0a1c87fe0229a2bd229a4130bb7",
+            )
+            .body(r#"{"compare": "f"}"#)
+            .reply(&route)
+            .await;
+
         assert_eq!(
-            &**warp::test::request()
-                .method("POST")
-                .header("X-GitHub-Event", "push")
-                .header(
-                    "X-Hub-Signature",
-                    "sha1=7c7bc65ac1fce0a1c87fe0229a2bd229a4130bb7"
-                )
-                .body(r#"{"compare": "f"}"#)
-                .reply(&route)
-                .body(),
-            &b"Unhandled rejection: Invalid HMAC signature"[..],
+            response.body(),
+            &b"Unhandled rejection: InvalidSignature"[..],
         )
     }
 
-    #[test]
-    fn wrong_event() {
+    #[tokio::test]
+    async fn wrong_event() {
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
         assert_eq!(
@@ -184,56 +205,63 @@ mod test {
                 .header("X-GitHub-Event", "pull")
                 .body(r#"{"compare": "f"}"#)
                 .reply(&route)
+                .await
                 .body(),
-            &b"Invalid request header 'X-GitHub-Event'"[..],
+            &b"Invalid request header \"X-GitHub-Event\""[..],
         );
     }
 
-    #[test]
-    fn missing_header() {
+    #[tokio::test]
+    async fn missing_header() {
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
+        let response = warp::test::request()
+            .method("POST")
+            .body(r#"{"compare": "f"}"#)
+            .reply(&route)
+            .await;
+
         assert_eq!(
-            &**warp::test::request()
-                .method("POST")
-                .body(r#"{"compare": "f"}"#)
-                .reply(&route)
-                .body(),
-            &b"Missing request header 'X-GitHub-Event'"[..],
+            response.body(),
+            &b"Missing request header \"X-GitHub-Event\""[..],
         );
     }
 
-    #[test]
-    fn invalid_json() {
+    #[tokio::test]
+    async fn invalid_json() {
         let route = webhook(Kind::PUSH, "").map(|PushEvent { compare }| compare);
 
+        let response = warp::test::request()
+            .method("POST")
+            .header("X-GitHub-Event", "push")
+            .body(r#"{"x": "f"}"#)
+            .reply(&route)
+            .await;
+
         assert_eq!(
-            &**warp::test::request()
-                .method("POST")
-                .header("X-GitHub-Event", "push")
-                .body(r#"{"x": "f"}"#)
-                .reply(&route)
-                .body(),
+            response.body(),
             &b"Request body deserialize error: missing field `compare` at line 1 column 10"[..],
         );
     }
 
-    #[test]
-    fn invalid_signed_json() {
+    #[tokio::test]
+    async fn invalid_signed_json() {
         let route = webhook(Kind::PUSH, "secret").map(|PushEvent { compare }| compare);
 
+        let response = warp::test::request()
+            .method("POST")
+            .header("X-GitHub-Event", "push")
+            .header(
+                "X-Hub-Signature",
+                "sha1=6a8e0e5f7da97721bd89c8276e2f3f6569fdea71",
+            )
+            .body(r#"{"x": "f"}"#)
+            .reply(&route)
+            .await;
+
         assert_eq!(
-            &**warp::test::request()
-                .method("POST")
-                .header("X-GitHub-Event", "push")
-                .header(
-                    "X-Hub-Signature",
-                    "sha1=6a8e0e5f7da97721bd89c8276e2f3f6569fdea71",
-                )
-                .body(r#"{"x": "f"}"#)
-                .reply(&route)
-                .body(),
-            &b"Unhandled rejection: missing field `compare` at line 1 column 10"[..],
+            response.body(),
+            &b"Unhandled rejection: Deserialization(\"missing field `compare` at line 1 column 10\")"[..],
         );
     }
 }
