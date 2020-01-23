@@ -2,29 +2,38 @@
 
 use github_webhook_message_validator::validate;
 use serde::de::DeserializeOwned;
-use std::fmt::Debug;
-use warp::{reject, Filter, Rejection};
+use std::fmt::{self, Debug, Formatter};
+use warp::reject::Reject;
+use warp::{Filter, Rejection};
 
-pub mod rejections {
-    use warp::reject::Reject;
-    #[derive(Debug, Clone)]
-    pub struct UnexpectedAlgorithm;
-    impl Reject for UnexpectedAlgorithm {}
-
-    #[derive(Debug, Clone)]
-    pub struct InvalidSignature;
-    impl Reject for InvalidSignature {}
-
-    #[derive(Debug, Clone)]
-    pub struct Decoding(pub String);
-    impl Reject for Decoding {}
-
-    #[derive(Debug, Clone)]
-    pub struct Deserialization(pub String);
-    impl Reject for Deserialization {}
+/// Represents an error in parsing webhook. Can be captured with `recover`.
+pub struct Error {
+    kind: ErrorKind,
 }
 
-use rejections::*;
+impl Debug for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            ErrorKind::UnexpectedAlgorithm => write!(f, "Unexpected algorithm"),
+            ErrorKind::InvalidHmacSignature => write!(f, "Invalid HMAC signature"),
+            ErrorKind::Hex(e) => write!(f, "{}", e),
+            ErrorKind::Serde(e) => write!(f, "{}", e),
+        }
+    }
+}
+
+impl Reject for Error {}
+
+enum ErrorKind {
+    UnexpectedAlgorithm,
+    InvalidHmacSignature,
+    Hex(hex::FromHexError),
+    Serde(serde_json::Error),
+}
+
+fn err(kind: ErrorKind) -> Error {
+    Error { kind }
+}
 
 /// Webhook kind.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
@@ -105,7 +114,10 @@ where
     if secret.as_ref().is_empty() {
         warp::post()
             .and(warp::header::exact("X-GitHub-Event", kind))
-            .and(warp::body::json())
+            .and(warp::body::bytes())
+            .and_then(|body: bytes::Bytes| {
+                async move { parse_json(&body).map_err(warp::reject::custom) }
+            })
             .boxed()
     } else {
         warp::post()
@@ -115,21 +127,26 @@ where
             .map(move |signature: String, body: bytes::Bytes| {
                 let start = "sha1=";
                 if !signature.starts_with(start) {
-                    return Err(reject::custom(UnexpectedAlgorithm)); //"Unexpected algorithm"
+                    return Err(err(ErrorKind::UnexpectedAlgorithm));
                 }
-                let signature = hex::decode(&signature[start.len()..])
-                    .map_err(|e| reject::custom(Decoding(e.to_string())))?;
-                let json: Vec<u8> = body.to_vec();
-                if validate(secret.as_ref().as_bytes(), &signature, &json) {
-                    serde_json::from_slice(&json)
-                        .map_err(|e| reject::custom(Deserialization(e.to_string())))
+                let signature =
+                    hex::decode(&signature[start.len()..]).map_err(|e| err(ErrorKind::Hex(e)))?;
+                if validate(secret.as_ref().as_bytes(), &signature, &body) {
+                    parse_json(&body)
                 } else {
-                    Err(reject::custom(InvalidSignature)) // "Invalid HMAC signature"
+                    Err(err(ErrorKind::InvalidHmacSignature))
                 }
             })
-            .and_then(|result| async { result })
+            .and_then(|result: Result<_, _>| async { result.map_err(warp::reject::custom) })
             .boxed()
     }
+}
+
+fn parse_json<T>(bytes: &[u8]) -> Result<T, Error>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_slice(&bytes).map_err(|e| err(ErrorKind::Serde(e)))
 }
 
 #[cfg(test)]
@@ -138,7 +155,7 @@ mod test {
     use serde_derive::Deserialize;
     use warp::Filter;
 
-    #[derive(Deserialize)]
+    #[derive(Debug, Deserialize)]
     struct PushEvent {
         compare: String,
     }
@@ -171,7 +188,7 @@ mod test {
             .reply(&route)
             .await;
 
-        assert_eq!(response.body(), &b"f"[..],)
+        assert_eq!(response.body(), &b"f"[..]);
     }
 
     #[tokio::test]
@@ -191,8 +208,8 @@ mod test {
 
         assert_eq!(
             response.body(),
-            &b"Unhandled rejection: InvalidSignature"[..],
-        )
+            &b"Unhandled rejection: Invalid HMAC signature"[..]
+        );
     }
 
     #[tokio::test]
@@ -207,7 +224,7 @@ mod test {
                 .reply(&route)
                 .await
                 .body(),
-            &b"Invalid request header \"X-GitHub-Event\""[..],
+            &br#"Invalid request header "X-GitHub-Event""#[..],
         );
     }
 
@@ -223,7 +240,7 @@ mod test {
 
         assert_eq!(
             response.body(),
-            &b"Missing request header \"X-GitHub-Event\""[..],
+            &br#"Missing request header "X-GitHub-Event""#[..],
         );
     }
 
@@ -240,7 +257,7 @@ mod test {
 
         assert_eq!(
             response.body(),
-            &b"Request body deserialize error: missing field `compare` at line 1 column 10"[..],
+            &b"Unhandled rejection: missing field `compare` at line 1 column 10"[..],
         );
     }
 
@@ -261,7 +278,7 @@ mod test {
 
         assert_eq!(
             response.body(),
-            &b"Unhandled rejection: Deserialization(\"missing field `compare` at line 1 column 10\")"[..],
+            &b"Unhandled rejection: missing field `compare` at line 1 column 10"[..],
         );
     }
 }
