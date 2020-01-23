@@ -119,7 +119,7 @@ where
                 }
                 let signature = hex::decode(&signature[start.len()..])
                     .map_err(|e| reject::custom(Decoding(e.to_string())))?;
-                let json: Vec<u8> = (*body).to_vec();
+                let json: Vec<u8> = body.to_vec();
                 if validate(secret.as_ref().as_bytes(), &signature, &json) {
                     serde_json::from_slice(&json)
                         .map_err(|e| reject::custom(Deserialization(e.to_string())))
