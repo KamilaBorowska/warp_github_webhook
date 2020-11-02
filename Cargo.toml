@@ -13,7 +13,7 @@ github_webhook_message_validator = "0.1.2"
 hex = "0.4.0"
 serde = "1.0.104"
 serde_json = "1.0.45"
-warp = "0.2.0"
+warp = { version = "0.2.0", default-features = false }
 
 [dev-dependencies]
 serde_derive = "1.0"
