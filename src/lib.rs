@@ -115,8 +115,8 @@ where
         warp::post()
             .and(warp::header::exact("X-GitHub-Event", kind))
             .and(warp::body::bytes())
-            .and_then(|body: bytes::Bytes| {
-                async move { parse_json(&body).map_err(warp::reject::custom) }
+            .and_then(|body: bytes::Bytes| async move {
+                parse_json(&body).map_err(warp::reject::custom)
             })
             .boxed()
     } else {
