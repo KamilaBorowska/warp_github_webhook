@@ -1,7 +1,8 @@
 //! GitHub webhook handler for [`warp`] web framework.
 
-use github_webhook_message_validator::validate;
+use hmac::{Hmac, Mac, NewMac};
 use serde::de::DeserializeOwned;
+use sha2::Sha256;
 use std::fmt::{self, Debug, Formatter};
 use warp::reject::Reject;
 use warp::{Filter, Rejection};
@@ -15,7 +16,7 @@ impl Debug for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match &self.kind {
             ErrorKind::UnexpectedAlgorithm => write!(f, "Unexpected algorithm"),
-            ErrorKind::InvalidHmacSignature => write!(f, "Invalid HMAC signature"),
+            ErrorKind::InvalidHmacSignature(e) => write!(f, "{}", e),
             ErrorKind::Hex(e) => write!(f, "{}", e),
             ErrorKind::Serde(e) => write!(f, "{}", e),
         }
@@ -26,13 +27,13 @@ impl Reject for Error {}
 
 enum ErrorKind {
     UnexpectedAlgorithm,
-    InvalidHmacSignature,
+    InvalidHmacSignature(hmac::crypto_mac::MacError),
     Hex(hex::FromHexError),
     Serde(serde_json::Error),
 }
 
-fn err(kind: ErrorKind) -> Error {
-    Error { kind }
+fn err(kind: ErrorKind) -> Rejection {
+    warp::reject::custom(Error { kind })
 }
 
 /// Webhook kind.
@@ -115,34 +116,33 @@ where
         warp::post()
             .and(warp::header::exact("X-GitHub-Event", kind))
             .and(warp::body::bytes())
-            .and_then(|body: bytes::Bytes| async move {
-                parse_json(&body).map_err(warp::reject::custom)
-            })
+            .and_then(|body: bytes::Bytes| async move { parse_json(&body) })
             .boxed()
     } else {
         warp::post()
-            .and(warp::header("X-Hub-Signature"))
+            .and(warp::header("X-Hub-Signature-256"))
             .and(warp::header::exact("X-GitHub-Event", kind))
             .and(warp::body::bytes())
             .map(move |signature: String, body: bytes::Bytes| {
-                let start = "sha1=";
+                let start = "sha256=";
                 if !signature.starts_with(start) {
                     return Err(err(ErrorKind::UnexpectedAlgorithm));
                 }
                 let signature =
                     hex::decode(&signature[start.len()..]).map_err(|e| err(ErrorKind::Hex(e)))?;
-                if validate(secret.as_ref().as_bytes(), &signature, &body) {
-                    parse_json(&body)
-                } else {
-                    Err(err(ErrorKind::InvalidHmacSignature))
-                }
+                let mut mac = Hmac::<Sha256>::new_varkey(secret.as_ref().as_bytes())
+                    .expect("HMAC can take a key of any size");
+                mac.update(&body);
+                mac.verify(&signature)
+                    .map_err(|e| err(ErrorKind::InvalidHmacSignature(e)))?;
+                parse_json(&body)
             })
-            .and_then(|result: Result<_, _>| async { result.map_err(warp::reject::custom) })
+            .and_then(|result| async move { result })
             .boxed()
     }
 }
 
-fn parse_json<T>(bytes: &[u8]) -> Result<T, Error>
+fn parse_json<T>(bytes: &[u8]) -> Result<T, Rejection>
 where
     T: DeserializeOwned,
 {
@@ -181,8 +181,8 @@ mod test {
             .method("POST")
             .header("X-GitHub-Event", "push")
             .header(
-                "X-Hub-Signature",
-                "sha1=7c7bc65ac1fce0a1c87fe0229a2bd229a4130bb6",
+                "X-Hub-Signature-256",
+                "sha256=90d5dd33699da3e261c005adb5e5a624ff2325e32cc5cd8ae673d48de0546966",
             )
             .body(r#"{"compare": "f"}"#)
             .reply(&route)
@@ -199,8 +199,8 @@ mod test {
             .method("POST")
             .header("X-GitHub-Event", "push")
             .header(
-                "X-Hub-Signature",
-                "sha1=7c7bc65ac1fce0a1c87fe0229a2bd229a4130bb7",
+                "X-Hub-Signature-256",
+                "sha256=90d5dd33699da3e261c005adb5e5a624ff2325e32cc5cd8ae673d48de0546965",
             )
             .body(r#"{"compare": "f"}"#)
             .reply(&route)
@@ -208,7 +208,7 @@ mod test {
 
         assert_eq!(
             response.body(),
-            &b"Unhandled rejection: Invalid HMAC signature"[..]
+            &b"Unhandled rejection: failed MAC verification"[..]
         );
     }
 
@@ -269,8 +269,8 @@ mod test {
             .method("POST")
             .header("X-GitHub-Event", "push")
             .header(
-                "X-Hub-Signature",
-                "sha1=6a8e0e5f7da97721bd89c8276e2f3f6569fdea71",
+                "X-Hub-Signature-256",
+                "sha256=914505db1dc3f5cb48a1ff1f2707984138581f534c9b57792f4c3c6550ac2c43",
             )
             .body(r#"{"x": "f"}"#)
             .reply(&route)
