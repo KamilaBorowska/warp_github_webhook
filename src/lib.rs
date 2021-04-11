@@ -63,6 +63,7 @@ impl Kind {
     pub const ORGANIZATION: Kind = Kind("organization");
     pub const ORG_BLOCK: Kind = Kind("org_block");
     pub const PAGE_BUILD: Kind = Kind("page_build");
+    pub const PING: Kind = Kind("ping");
     pub const PROJECT_CARD: Kind = Kind("project_card");
     pub const PROJECT_COLUMN: Kind = Kind("project_column");
     pub const PROJECT: Kind = Kind("project");
