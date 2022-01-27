@@ -1,6 +1,6 @@
 //! GitHub webhook handler for [`warp`] web framework.
 
-use hmac::{Hmac, Mac, NewMac};
+use hmac::{Hmac, Mac};
 use serde::de::DeserializeOwned;
 use sha2::Sha256;
 use std::fmt::{self, Debug, Formatter};
@@ -27,7 +27,7 @@ impl Reject for Error {}
 
 enum ErrorKind {
     UnexpectedAlgorithm,
-    InvalidHmacSignature(hmac::crypto_mac::MacError),
+    InvalidHmacSignature(hmac::digest::MacError),
     Hex(hex::FromHexError),
     Serde(serde_json::Error),
 }
@@ -125,16 +125,14 @@ where
             .and(warp::header::exact("X-GitHub-Event", kind))
             .and(warp::body::bytes())
             .map(move |signature: String, body: bytes::Bytes| {
-                let start = "sha256=";
-                if !signature.starts_with(start) {
-                    return Err(err(ErrorKind::UnexpectedAlgorithm));
-                }
-                let signature =
-                    hex::decode(&signature[start.len()..]).map_err(|e| err(ErrorKind::Hex(e)))?;
-                let mut mac = Hmac::<Sha256>::new_varkey(secret.as_ref().as_bytes())
+                let signature = signature
+                    .strip_prefix("sha256=")
+                    .ok_or_else(|| err(ErrorKind::UnexpectedAlgorithm))?;
+                let signature = hex::decode(signature).map_err(|e| err(ErrorKind::Hex(e)))?;
+                let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_ref().as_bytes())
                     .expect("HMAC can take a key of any size");
                 mac.update(&body);
-                mac.verify(&signature)
+                mac.verify_slice(&signature)
                     .map_err(|e| err(ErrorKind::InvalidHmacSignature(e)))?;
                 parse_json(&body)
             })
@@ -147,7 +145,7 @@ fn parse_json<T>(bytes: &[u8]) -> Result<T, Rejection>
 where
     T: DeserializeOwned,
 {
-    serde_json::from_slice(&bytes).map_err(|e| err(ErrorKind::Serde(e)))
+    serde_json::from_slice(bytes).map_err(|e| err(ErrorKind::Serde(e)))
 }
 
 #[cfg(test)]
@@ -209,7 +207,7 @@ mod test {
 
         assert_eq!(
             response.body(),
-            &b"Unhandled rejection: failed MAC verification"[..]
+            &b"Unhandled rejection: MAC tag mismatch"[..]
         );
     }
 
