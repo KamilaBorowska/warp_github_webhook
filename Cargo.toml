@@ -6,6 +6,7 @@ description = "GitHub webhook for Warp web framework"
 license = "MIT OR Apache-2.0"
 repository = "https://gitlab.com/KonradBorowski/warp_github_webhook"
 categories = ["web-programming::http-server"]
+keywords = ["warp", "webhook", "github"]
 edition = "2018"
 
 [dependencies]
