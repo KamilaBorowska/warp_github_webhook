@@ -5,6 +5,7 @@ authors = ["Konrad Borowski <konrad@borowski.pw>"]
 description = "GitHub webhook for Warp web framework"
 license = "MIT OR Apache-2.0"
 repository = "https://gitlab.com/KonradBorowski/warp_github_webhook"
+categories = ["web-programming::http-server"]
 edition = "2018"
 
 [dependencies]
